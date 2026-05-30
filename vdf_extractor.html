@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VDF Extractor — NYC H+H</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<style>
+  :root {
+    --paper:        #f6f1e8;
+    --paper-deep:   #ede5d4;
+    --ink:          #1c1814;
+    --ink-soft:     #6b5f4f;
+    --ink-mute:     #a59682;
+    --rule:         #d8cdb6;
+    --accent:       #b04a2f;
+    --good:         #4a6741;
+    --warn:         #a85a1f;
+    --neutral:      #968870;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--paper); color: var(--ink); }
+  body {
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; line-height: 1.5;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(176,74,47,0.03), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(28,24,20,0.03), transparent 40%);
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 60px 32px 80px; }
+
+  header { margin-bottom: 48px; }
+  header .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 12px;
+  }
+  header h1 {
+    font-family: 'Newsreader', serif; font-weight: 600;
+    font-size: 56px; line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px;
+  }
+  header h1 em { font-style: italic; color: var(--accent); font-weight: 400; }
+  header .sub { font-family: 'Newsreader', serif; font-style: italic; font-size: 18px; color: var(--ink-soft); }
+
+  .drop {
+    border: 1.5px dashed var(--rule); background: rgba(255,255,255,0.4);
+    border-radius: 4px; padding: 80px 40px; text-align: center;
+    cursor: pointer; transition: all 200ms ease; margin-bottom: 32px; display: block;
+  }
+  .drop:hover, .drop.drag {
+    border-color: var(--accent); background: rgba(176,74,47,0.04); transform: translateY(-1px);
+  }
+  .drop .icon {
+    width: 48px; height: 48px; margin: 0 auto 20px;
+    border: 1.5px solid var(--ink-mute); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-soft); transition: all 200ms ease;
+  }
+  .drop:hover .icon, .drop.drag .icon { border-color: var(--accent); color: var(--accent); }
+  .drop h2 { font-family: 'Newsreader', serif; font-weight: 400; font-size: 22px; margin-bottom: 6px; }
+  .drop p { color: var(--ink-soft); font-size: 14px; }
+  .drop input { display: none; }
+
+  .alert { padding: 14px 18px; border-radius: 4px; margin-bottom: 24px; font-size: 14px; }
+  .alert.error { background: #f9e3dc; color: #6e2415; border-left: 3px solid var(--accent); }
+  .alert.info { background: var(--paper-deep); color: var(--ink-soft); }
+
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 0; border-bottom: 1px solid var(--rule);
+    margin-bottom: 32px; gap: 16px; flex-wrap: wrap;
+  }
+  .toolbar .filename {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--ink-soft);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+  }
+  .toolbar .actions { display: flex; gap: 8px; }
+
+  button.btn {
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 13px;
+    background: var(--ink); color: var(--paper); border: none;
+    padding: 8px 14px; border-radius: 3px; cursor: pointer; transition: all 150ms ease;
+  }
+  button.btn:hover { background: var(--accent); }
+  button.btn.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--rule); }
+  button.btn.ghost:hover { color: var(--ink); border-color: var(--ink-soft); background: rgba(255,255,255,0.4); }
+
+  section.group { margin-bottom: 40px; }
+  section.group h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 16px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--rule);
+  }
+
+  .row {
+    display: grid; grid-template-columns: 200px 1fr auto;
+    align-items: baseline; gap: 24px; padding: 12px 0;
+    border-bottom: 1px solid rgba(216,205,182,0.4);
+  }
+  .row:last-child { border-bottom: none; }
+  .row .label { font-size: 13px; color: var(--ink-soft); }
+  .row .value { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--ink); word-break: break-word; }
+  .row .value.empty { color: var(--ink-mute); font-style: italic; font-family: 'Newsreader', serif; }
+
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 11px;
+    font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .badge.yes   { background: rgba(74,103,65,0.12);  color: var(--good); }
+  .badge.no    { background: rgba(168,90,31,0.12);  color: var(--warn); }
+  .badge.unset { background: rgba(150,136,112,0.15); color: var(--neutral); }
+
+  .copy {
+    background: transparent; border: 1px solid transparent;
+    color: var(--ink-mute);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 3px;
+    cursor: pointer; transition: all 150ms ease;
+    min-width: 64px; text-align: center;
+  }
+  .copy:hover { color: var(--accent); border-color: var(--rule); }
+  .copy.copied { color: var(--good); border-color: rgba(74,103,65,0.3); background: rgba(74,103,65,0.06); }
+  .copy:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .setup {
+    margin: 56px 0 32px; padding: 28px 32px;
+    background: rgba(28,24,20,0.025);
+    border: 1px solid var(--rule); border-radius: 4px;
+  }
+  .setup h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px;
+  }
+  .setup .lead {
+    font-family: 'Newsreader', serif; font-size: 18px;
+    color: var(--ink); margin-bottom: 18px; line-height: 1.4;
+  }
+  .bookmarklet {
+    display: inline-block;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 500;
+    color: var(--paper); background: var(--ink);
+    padding: 10px 18px; border-radius: 3px;
+    text-decoration: none; border: 1px solid var(--ink);
+    cursor: grab; transition: all 150ms ease; user-select: none;
+  }
+  .bookmarklet:hover { background: var(--accent); border-color: var(--accent); }
+  .bookmarklet:active { cursor: grabbing; }
+  .bookmarklet::before { content: "↗ "; font-family: 'JetBrains Mono', monospace; margin-right: 4px; opacity: 0.7; }
+
+  .setup .steps { margin-top: 24px; padding-top: 20px; border-top: 1px dashed var(--rule); }
+  .setup .steps ol { counter-reset: step; list-style: none; padding: 0; }
+  .setup .steps li {
+    counter-increment: step; position: relative;
+    padding-left: 36px; margin-bottom: 12px;
+    font-size: 14px; color: var(--ink-soft);
+  }
+  .setup .steps li::before {
+    content: counter(step); position: absolute; left: 0; top: -1px;
+    width: 22px; height: 22px; border: 1px solid var(--ink-mute);
+    border-radius: 50%; text-align: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 20px;
+    color: var(--ink-soft);
+  }
+  .setup .steps li strong { color: var(--ink); font-weight: 500; }
+  .setup .scope {
+    margin-top: 18px; padding: 10px 14px;
+    background: rgba(176,74,47,0.06); border-left: 2px solid var(--accent);
+    font-size: 13px; color: var(--ink-soft);
+    font-family: 'Newsreader', serif; font-style: italic;
+  }
+
+  footer {
+    margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--rule);
+    font-size: 12px; color: var(--ink-mute); line-height: 1.7;
+    font-family: 'Newsreader', serif; font-style: italic;
+  }
+  footer code {
+    font-family: 'JetBrains Mono', monospace; font-style: normal;
+    background: rgba(28,24,20,0.04); padding: 1px 6px; border-radius: 2px; font-size: 11px;
+  }
+
+  @media (max-width: 600px) {
+    header h1 { font-size: 38px; }
+    .row { grid-template-columns: 1fr; gap: 4px; }
+    .row .copy { justify-self: start; margin-top: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">NYC Health + Hospitals · Form V8</div>
+  <h1>Vendor <em>Demographics</em></h1>
+  <div class="sub">Drop a fillable VDF below — values are extracted in your browser.</div>
+</header>
+
+<div id="alerts"></div>
+
+<label class="drop" id="dropZone">
+  <input type="file" id="fileInput" accept="application/pdf">
+  <div class="icon">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M12 4v12m-5-5l5 5 5-5M5 20h14"/>
+    </svg>
+  </div>
+  <h2>Drop VDF PDF here</h2>
+  <p>or click to choose a file · stays on your computer</p>
+</label>
+
+<div id="results" style="display:none;"></div>
+
+<section class="setup">
+  <h3>PeopleSoft Autofill — One-Time Setup</h3>
+  <p class="lead">Drag this button up into your browser's bookmarks bar. You only do this once.</p>
+  <a id="bookmarkletLink" class="bookmarklet" href="#" draggable="true">VDF → PeopleSoft</a>
+  <div class="steps">
+    <ol>
+      <li>Drop a VDF above and click <strong>Copy all (JSON)</strong>.</li>
+      <li>On the <strong>Identifying Information</strong> tab, click the bookmark once (fills Supplier Name + Short Name).</li>
+      <li>On the <strong>Address</strong> tab, create Address ID 1, 2, and 3 with the <strong>+</strong> button first. Then click the bookmark once — it fills every address record visible on the page.</li>
+    </ol>
+  </div>
+  <div class="scope">
+    Fills Supplier Name &amp; Short Name on the Identifying Information tab. On the Address
+    tab it fills every visible address record: Description (1 = LEGAL ADDRESS,
+    2 = REMITTANCE ADDRESS, 3 = PURCHASE ADDRESS), Address 1, City, State, Postal, and
+    Email ID. Create the three address records yourself first.
+  </div>
+</section>
+
+<footer>
+  Built for the NYC H+H Vendor Demographics Form, V8 (effective 4/1/26).
+  Field positions are tied to that layout — if a future version reflows the
+  page, the Yes/No detection may need adjusting. PDF parsing happens locally
+  via <code>pdf-lib</code>; nothing is uploaded.
+</footer>
+
+</div>
+
+<script>
+"use strict";
+
+const TEXT_FIELDS = {
+  vendor_legal_name:           "Vendor Name",
+  tax_id:                      "Tax ID",
+  duns_number:                 "DUNS Number",
+  order_fax_or_email:          "undefined_2",
+  account_rep_name:            "Account Rep Name",
+  account_rep_email:           "Account Rep Email",
+  account_rep_phone:           "Account Rep Phone Number",
+  customer_service_phone:      "Customer Service Phone Number\\",
+  customer_service_email:      "Customer Service Email",
+  bank_name:                   "Bank Name",
+  bank_routing:                "Routing #",
+  bank_account:                "Bank Account #",
+  legal_entity_name:           "Entity Name",
+  legal_street:                "Street",
+  legal_city_state_zip:        "CityStateZip",
+  remit_entity_name:           "Entity Name_2",
+  remit_street:                "Street_2",
+  remit_city_state_zip:        "CityStateZip_2",
+  remit_email:                 "Remittance Email",
+  ordering_entity_name:        "Entity Name_3",
+  ordering_street:             "Street_3",
+  ordering_city_state_zip:     "CityStateZip_3",
+  purchase_email:              "Purchase Email",
+  supplier_print_name:         "Print Name",
+  psft_supplier_id:            "Revision Provide PSFT Supplier ID",
+};
+
+const YES_NO_QUESTIONS = {
+  tax_id_is_ssn:     { yes: { field: "Check Box5" },                                       no:  { field: "Check Box6" } },
+  transmits_via_edi: { yes: { field: "Electronic Data Interchange",       x: 44,  y: 518 }, no: { field: "Electronic Data Interchange",       x: 104, y: 518 } },
+  is_mwbe_certified: { yes: { field: "Yes Please attach certification" },                   no: { field: "No_2" } },
+  is_1099_eligible:  { yes: { field: "Is your organization 1099 eligible", x: 32,  y: 258 }, no: { field: "Is your organization 1099 eligible", x: 93,  y: 258 } },
+  is_hh_affiliate:   { yes: { field: "Is your organization 1099 eligible", x: 273, y: 259 }, no: { field: "Is your organization 1099 eligible", x: 335, y: 260 } },
+};
+
+const REQUEST_TYPE_BOXES = {
+  new_supplier: "Check Box7",
+  revision:     "Check Box8",
+  reactivation: "Check Box9",
+};
+
+function getAsString(widget) { const a = widget.getAppearanceState(); return a ? a.toString() : null; }
+function widgetIsChecked(widget) { const s = getAsString(widget); return s !== null && s !== "/Off"; }
+function isWidgetCheckedByLocator(form, locator, tol = 4) {
+  let field;
+  try { field = form.getField(locator.field); } catch (e) { return false; }
+  const widgets = field.acroField.getWidgets();
+  for (const w of widgets) {
+    if (locator.x === undefined) return widgetIsChecked(w);
+    const r = w.getRectangle();
+    if (Math.abs(r.x - locator.x) < tol && Math.abs(r.y - locator.y) < tol) return widgetIsChecked(w);
+  }
+  return false;
+}
+function getTextValue(form, fieldName) {
+  try { const f = form.getTextField(fieldName); return (f.getText() || "").trim(); } catch (e) { return ""; }
+}
+
+function parseCityStateZip(combined) {
+  if (!combined) return { city: "", state: "", zip: "" };
+  // Tries: "City, ST, 12345" / "City, ST 12345" / "City ST 12345" / 9-digit zips
+  const m = combined.trim().match(/^(.*?)[,\s]+([A-Za-z]{2})[,\s]+(\d{5}(?:-\d{4})?)\s*$/);
+  if (m) return { city: m[1].replace(/[,\s]+$/, "").trim(), state: m[2].toUpperCase(), zip: m[3] };
+  return { city: combined.trim(), state: "", zip: "" };
+}
+
+async function extractVDF(arrayBuffer) {
+  const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+  const form = pdfDoc.getForm();
+  const data = {};
+  for (const [label, fieldName] of Object.entries(TEXT_FIELDS)) data[label] = getTextValue(form, fieldName);
+  for (const [label, qmap] of Object.entries(YES_NO_QUESTIONS)) {
+    const yes = isWidgetCheckedByLocator(form, qmap.yes);
+    const no  = isWidgetCheckedByLocator(form, qmap.no);
+    data[label] = (yes && !no) ? "Yes" : (no && !yes) ? "No" : null;
+  }
+  const checked = [];
+  for (const [label, fname] of Object.entries(REQUEST_TYPE_BOXES)) {
+    if (isWidgetCheckedByLocator(form, { field: fname })) checked.push(label);
+  }
+  data.request_type = checked.length === 1 ? checked[0] : (checked.length ? checked : null);
+  for (const prefix of ["legal", "remit", "ordering"]) {
+    const parts = parseCityStateZip(data[prefix + "_city_state_zip"]);
+    data[prefix + "_city"]  = parts.city;
+    data[prefix + "_state"] = parts.state;
+    data[prefix + "_zip"]   = parts.zip;
+  }
+  data.vendor_short_name = (data.vendor_legal_name || "").replace(/[^A-Za-z0-9]/g, "");
+  return data;
+}
+
+const SECTIONS = [
+  { title: "Vendor Identification", rows: [
+    { label: "Legal Name", key: "vendor_legal_name" },
+    { label: "Tax ID", key: "tax_id" },
+    { label: "Tax ID is SSN?", key: "tax_id_is_ssn", yesno: true },
+    { label: "DUNS Number", key: "duns_number" },
+  ]},
+  { title: "Operations & Compliance", rows: [
+    { label: "Transmits via EDI?", key: "transmits_via_edi", yesno: true },
+    { label: "Order Email / Fax", key: "order_fax_or_email" },
+    { label: "MWBE Certified?", key: "is_mwbe_certified", yesno: true },
+    { label: "1099 Eligible?", key: "is_1099_eligible", yesno: true },
+    { label: "NYC H+H Affiliate?", key: "is_hh_affiliate", yesno: true },
+  ]},
+  { title: "Request Information", rows: [
+    { label: "Request Type", key: "request_type" },
+    { label: "PSFT Supplier ID", key: "psft_supplier_id" },
+  ]},
+  { title: "Account Representative", rows: [
+    { label: "Name", key: "account_rep_name" },
+    { label: "Email", key: "account_rep_email" },
+    { label: "Phone", key: "account_rep_phone" },
+  ]},
+  { title: "Customer Service", rows: [
+    { label: "Phone", key: "customer_service_phone" },
+    { label: "Email", key: "customer_service_email" },
+  ]},
+  { title: "Banking (ACH)", rows: [
+    { label: "Bank Name", key: "bank_name" },
+    { label: "Routing #", key: "bank_routing" },
+    { label: "Account #", key: "bank_account" },
+  ]},
+  { title: "Legal Business Address", rows: [
+    { label: "Entity Name", key: "legal_entity_name" },
+    { label: "Street", key: "legal_street" },
+    { label: "City", key: "legal_city" },
+    { label: "State", key: "legal_state" },
+    { label: "Postal / Zip", key: "legal_zip" },
+  ]},
+  { title: "Remittance Address", rows: [
+    { label: "Entity Name", key: "remit_entity_name" },
+    { label: "Street", key: "remit_street" },
+    { label: "City", key: "remit_city" },
+    { label: "State", key: "remit_state" },
+    { label: "Postal / Zip", key: "remit_zip" },
+    { label: "Remittance Email", key: "remit_email" },
+  ]},
+  { title: "Ordering / Delivery / Return", rows: [
+    { label: "Entity Name", key: "ordering_entity_name" },
+    { label: "Street", key: "ordering_street" },
+    { label: "City", key: "ordering_city" },
+    { label: "State", key: "ordering_state" },
+    { label: "Postal / Zip", key: "ordering_zip" },
+    { label: "Purchase Email", key: "purchase_email" },
+  ]},
+];
+
+const REQUEST_TYPE_LABELS = { new_supplier: "New Supplier", revision: "Revision", reactivation: "Reactivation" };
+
+function renderResults(data, filename) {
+  const out = document.getElementById("results");
+  let html = `
+    <div class="toolbar">
+      <div class="filename">${escapeHtml(filename)}</div>
+      <div class="actions">
+        <button class="btn ghost" id="resetBtn">Load another</button>
+        <button class="btn" id="copyAllBtn">Copy all (JSON)</button>
+      </div>
+    </div>`;
+  for (const section of SECTIONS) {
+    html += `<section class="group"><h3>${section.title}</h3>`;
+    for (const row of section.rows) html += renderRow(row, data[row.key]);
+    html += `</section>`;
+  }
+  out.innerHTML = html;
+  out.style.display = "block";
+  document.getElementById("resetBtn").addEventListener("click", reset);
+  document.getElementById("copyAllBtn").addEventListener("click", () => {
+    copyText(JSON.stringify(data, null, 2), document.getElementById("copyAllBtn"));
+  });
+  out.querySelectorAll(".copy").forEach(btn => {
+    btn.addEventListener("click", () => copyText(btn.dataset.value, btn));
+  });
+  document.getElementById("dropZone").style.display = "none";
+}
+
+function renderRow(row, value) {
+  let displayValue, copyValue, isEmpty = false;
+  if (row.yesno) {
+    if (value === "Yes")     displayValue = `<span class="badge yes">Yes</span>`;
+    else if (value === "No") displayValue = `<span class="badge no">No</span>`;
+    else                     { displayValue = `<span class="badge unset">— blank —</span>`; isEmpty = true; }
+    copyValue = value || "";
+  } else if (row.key === "request_type") {
+    if (Array.isArray(value)) {
+      displayValue = `<span class="badge no">multiple: ${value.join(", ")}</span>`;
+      copyValue = value.join(", ");
+    } else if (value) {
+      displayValue = `<span class="badge yes">${REQUEST_TYPE_LABELS[value] || value}</span>`;
+      copyValue = REQUEST_TYPE_LABELS[value] || value;
+    } else { displayValue = `<span class="badge unset">— none selected —</span>`; copyValue = ""; isEmpty = true; }
+  } else {
+    if (!value) { displayValue = `<span class="value empty">— blank —</span>`; isEmpty = true; copyValue = ""; }
+    else        { displayValue = escapeHtml(value); copyValue = value; }
+  }
+  const copyDisabled = isEmpty ? "disabled" : "";
+  const dataAttr = isEmpty ? "" : `data-value="${escapeAttr(copyValue)}"`;
+  return `
+    <div class="row">
+      <div class="label">${row.label}</div>
+      <div class="value">${displayValue}</div>
+      <button class="copy" ${dataAttr} ${copyDisabled}>Copy</button>
+    </div>`;
+}
+
+async function copyText(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const original = btn.textContent;
+    btn.textContent = "Copied"; btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = original; btn.classList.remove("copied"); }, 1400);
+  } catch (e) {
+    showAlert("error", "Couldn't write to clipboard. Try selecting the text manually.");
+  }
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+function showAlert(type, msg) { document.getElementById("alerts").innerHTML = `<div class="alert ${type}">${escapeHtml(msg)}</div>`; }
+function clearAlert() { document.getElementById("alerts").innerHTML = ""; }
+function reset() {
+  document.getElementById("results").style.display = "none";
+  document.getElementById("results").innerHTML = "";
+  document.getElementById("dropZone").style.display = "block";
+  document.getElementById("fileInput").value = "";
+  clearAlert();
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  if (file.type && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+    showAlert("error", "That doesn't look like a PDF."); return;
+  }
+  clearAlert(); showAlert("info", `Reading ${file.name}…`);
+  try {
+    const buf = await file.arrayBuffer();
+    const data = await extractVDF(buf);
+    const anyText = Object.keys(TEXT_FIELDS).some(k => data[k]);
+    const anyYN = Object.keys(YES_NO_QUESTIONS).some(k => data[k]);
+    if (!anyText && !anyYN && !data.request_type) {
+      showAlert("error",
+        "I couldn't find any filled fields. Make sure this is the fillable VDF (V8) with values in it — flat scans won't work here.");
+      return;
+    }
+    clearAlert(); renderResults(data, file.name);
+  } catch (err) {
+    console.error(err);
+    showAlert("error", "Something went wrong reading that PDF: " + (err.message || err));
+  }
+}
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+fileInput.addEventListener("change", e => handleFile(e.target.files[0]));
+["dragenter", "dragover"].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.add("drag"); }));
+["dragleave", "drop"].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.remove("drag"); }));
+dropZone.addEventListener("drop", e => {
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+
+// ---------------- Bookmarklet ----------------
+// Runs in the context of whatever PeopleSoft page is open in the active tab.
+
+const BOOKMARKLET_BODY = `(async function(){
+  function showToast(text, kind) {
+    try {
+      const colors = {success: 'rgb(28,24,20)', error: 'rgb(176,74,47)', info: 'rgb(58,99,84)'};
+      const t = document.createElement('div');
+      t.textContent = text;
+      t.style.cssText = 'position:fixed;top:24px;right:24px;background:' + (colors[kind] || colors.info) + ';color:rgb(246,241,232);padding:14px 20px;border-radius:4px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:500;z-index:2147483647;box-shadow:0 4px 14px rgba(0,0,0,0.25);max-width:440px;line-height:1.5;white-space:pre-line;pointer-events:none;';
+      (document.body || document.documentElement).appendChild(t);
+      setTimeout(function(){ t.style.transition = 'opacity 400ms'; t.style.opacity = '0'; setTimeout(function(){ t.remove(); }, 400); }, kind === 'error' ? 9000 : 5500);
+    } catch(e) {}
+  }
+  console.log('[VDF] bookmarklet invoked at', new Date().toISOString());
+  showToast('VDF autofill: running\u2026', 'info');
+  try {
+    let data;
+    try {
+      const text = await navigator.clipboard.readText();
+      data = JSON.parse(text);
+    } catch(e) {
+      alert("Couldn't read VDF data from clipboard.\\n\\nClick 'Copy all (JSON)' on the VDF Extractor first, then come back here.");
+      return;
+    }
+    if (!data || typeof data !== 'object') { alert("Clipboard didn't contain valid JSON."); return; }
+
+    const norm = s => (s || '').replace(/\\*+/g, '').replace(/\\s+/g, ' ').trim().replace(/:+$/, '').toLowerCase();
+    const stripSeps = s => (s || '').toUpperCase().replace(/[_\\-\\s]/g, '');
+    const NON_TEXT = ['checkbox','radio','button','submit','reset','image','file','hidden'];
+    function collectInputs(doc) {
+      return Array.from(doc.querySelectorAll('input, textarea, select')).filter(inp => {
+        if (inp.tagName !== 'INPUT') return true;
+        return !NON_TEXT.includes((inp.type || 'text').toLowerCase());
+      });
+    }
+    function getAccName(input, doc) {
+      const aria = input.getAttribute('aria-label');
+      if (aria && aria.trim()) return aria;
+      const ids = (input.getAttribute('aria-labelledby') || '').split(/\\s+/).filter(Boolean);
+      if (ids.length) {
+        const texts = ids.map(id => doc.getElementById(id)).filter(Boolean).map(el => el.textContent);
+        if (texts.length) return texts.join(' ');
+      }
+      if (input.id) {
+        try {
+          const escaped = input.id.replace(/(["\\\\])/g, '\\\\$1');
+          const lbl = doc.querySelector('label[for="' + escaped + '"]');
+          if (lbl) return lbl.textContent;
+        } catch(e) {}
+      }
+      let p = input.parentElement;
+      while (p) { if (p.tagName === 'LABEL') return p.textContent; p = p.parentElement; }
+      return '';
+    }
+    function findInDoc(doc, target, inputs) {
+      const t = norm(target);
+      const inputSet = new Set(inputs);
+      for (const lbl of doc.querySelectorAll('label[for]')) {
+        if (norm(lbl.textContent) === t) {
+          const inp = doc.getElementById(lbl.htmlFor);
+          if (inp && inputSet.has(inp)) return inp;
+        }
+      }
+      for (const lbl of doc.querySelectorAll('label[for]')) {
+        if (norm(lbl.textContent).includes(t)) {
+          const inp = doc.getElementById(lbl.htmlFor);
+          if (inp && inputSet.has(inp)) return inp;
+        }
+      }
+      for (const inp of inputs) {
+        const name = getAccName(inp, doc);
+        if (name && norm(name) === t) return inp;
+      }
+      for (const inp of inputs) {
+        const name = getAccName(inp, doc);
+        if (name && norm(name).includes(t)) return inp;
+      }
+      const tStripped = stripSeps(target);
+      for (const inp of inputs) {
+        const idS = stripSeps(inp.id);
+        const nmS = stripSeps(inp.name);
+        if ((idS && idS.includes(tStripped)) || (nmS && nmS.includes(tStripped))) return inp;
+      }
+      return null;
+    }
+    function searchAllFrames(win, target) {
+      try {
+        const inputs = collectInputs(win.document);
+        const r = findInDoc(win.document, target, inputs);
+        if (r) return r;
+      } catch(e) {}
+      for (let i = 0; i < win.frames.length; i++) {
+        const found = searchAllFrames(win.frames[i], target);
+        if (found) return found;
+      }
+      return null;
+    }
+    function setVal(el, val) {
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+      setter.call(el, val);
+      el.dispatchEvent(new Event('input', {bubbles: true}));
+      el.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+    function fillOne(label, value) {
+      if (value === undefined || value === null || value === '') return false;
+      const input = searchAllFrames(window, label);
+      if (!input) return false;
+      setVal(input, value);
+      const orig = input.style.boxShadow;
+      input.style.boxShadow = '0 0 0 3px rgb(251,191,36)';
+      setTimeout(function(){ input.style.boxShadow = orig; }, 1800);
+      return true;
+    }
+
+    // Find Address ID display spans across all frames (signals the Address tab).
+    function findAddrIdSpans(win, out) {
+      try {
+        const spans = win.document.querySelectorAll('span[id*="ADDRESS_SEQ_NUM"]');
+        for (const s of spans) out.push(s);
+      } catch(e) {}
+      for (let i = 0; i < win.frames.length; i++) {
+        try { findAddrIdSpans(win.frames[i], out); } catch(e) {}
+      }
+    }
+    const addrSpans = [];
+    findAddrIdSpans(window, addrSpans);
+
+    if (addrSpans.length > 0) {
+      // ===== ADDRESS TAB (handles one record or all three at once) =====
+      const SETS = {
+        '1': { desc: 'LEGAL ADDRESS',      street: 'legal_street',    city: 'legal_city',    state: 'legal_state',    zip: 'legal_zip',    email: null },
+        '2': { desc: 'REMITTANCE ADDRESS', street: 'remit_street',    city: 'remit_city',    state: 'remit_state',    zip: 'remit_zip',    email: 'remit_email' },
+        '3': { desc: 'PURCHASE ADDRESS',   street: 'ordering_street', city: 'ordering_city', state: 'ordering_state', zip: 'ordering_zip', email: 'purchase_email' }
+      };
+      // Sort the Address ID spans into document order.
+      const spans = addrSpans.slice().sort(function(a, b) {
+        const pos = a.compareDocumentPosition(b);
+        if (pos & 4) return -1;
+        if (pos & 2) return 1;
+        return 0;
+      });
+      const adoc = spans[0].ownerDocument;
+      // Which record (index into spans) does an input belong to?
+      // = the last Address ID span that appears before it in document order.
+      function ownerIndex(input) {
+        let owner = -1;
+        for (let i = 0; i < spans.length; i++) {
+          if (spans[i].compareDocumentPosition(input) & 4) owner = i;
+          else break;
+        }
+        return owner;
+      }
+      // Every input whose label / accessible name / id matches the target,
+      // trying tighter matches first and falling back to looser ones.
+      function findAllMatching(target) {
+        const t = norm(target);
+        const inputs = collectInputs(adoc);
+        const inputSet = new Set(inputs);
+        const found = [];
+        const seen = new Set();
+        function add(inp) { if (inp && !seen.has(inp)) { seen.add(inp); found.push(inp); } }
+        // Tier 1: exact match on a label[for] or on the accessible name.
+        for (const lbl of adoc.querySelectorAll('label[for]')) {
+          if (norm(lbl.textContent) === t) {
+            const inp = adoc.getElementById(lbl.htmlFor);
+            if (inp && inputSet.has(inp)) add(inp);
+          }
+        }
+        for (const inp of inputs) {
+          const name = getAccName(inp, adoc);
+          if (name && norm(name) === t) add(inp);
+        }
+        if (found.length) return found;
+        // Tier 2: substring on label[for] or accessible name.
+        for (const lbl of adoc.querySelectorAll('label[for]')) {
+          if (norm(lbl.textContent).includes(t)) {
+            const inp = adoc.getElementById(lbl.htmlFor);
+            if (inp && inputSet.has(inp)) add(inp);
+          }
+        }
+        for (const inp of inputs) {
+          const name = getAccName(inp, adoc);
+          if (name && norm(name).includes(t)) add(inp);
+        }
+        if (found.length) return found;
+        // Tier 3: id/name attribute substring (e.g. 'Address 1' -> 'ADDRESS1').
+        const tStripped = stripSeps(target);
+        for (const inp of inputs) {
+          const idS = stripSeps(inp.id);
+          const nmS = stripSeps(inp.name);
+          if ((idS && idS.includes(tStripped)) || (nmS && nmS.includes(tStripped))) add(inp);
+        }
+        return found;
+      }
+      function highlight(inp) {
+        const orig = inp.style.boxShadow;
+        inp.style.boxShadow = '0 0 0 3px rgb(251,191,36)';
+        setTimeout(function(){ inp.style.boxShadow = orig; }, 1800);
+      }
+      const FIELD_DEFS = [
+        { label: 'Description', val: function(s){ return s.desc; } },
+        { label: 'Address 1',   val: function(s){ return data[s.street]; } },
+        { label: 'City',        val: function(s){ return data[s.city]; } },
+        { label: 'State',       val: function(s){ return data[s.state]; } },
+        { label: 'Postal',      val: function(s){ return data[s.zip]; } },
+        { label: 'Email ID',    val: function(s){ return s.email ? data[s.email] : null; } }
+      ];
+      const doneByRecord = spans.map(function(){ return []; });
+      for (const fd of FIELD_DEFS) {
+        const matches = findAllMatching(fd.label);
+        for (const inp of matches) {
+          const ri = ownerIndex(inp);
+          if (ri < 0 || ri >= spans.length) continue;
+          const idStr = (spans[ri].textContent || '').trim();
+          const set = SETS[idStr];
+          if (!set) continue;
+          const value = fd.val(set);
+          if (value === undefined || value === null || value === '') continue;
+          setVal(inp, value);
+          highlight(inp);
+          doneByRecord[ri].push(fd.label);
+        }
+      }
+      const lines = [];
+      for (let i = 0; i < spans.length; i++) {
+        const idStr = (spans[i].textContent || '').trim();
+        const set = SETS[idStr];
+        lines.push('ID ' + idStr + ' (' + (set ? set.desc : '?') + '): ' + (doneByRecord[i].join(', ') || 'nothing'));
+      }
+      showToast('VDF autofill \u2014 addresses\\n' + lines.join('\\n'), 'success');
+      return;
+    }
+
+    // ===== IDENTIFYING INFORMATION TAB (or other) =====
+    const FIELDS = [
+      { label: 'Supplier Name',       key: 'vendor_legal_name' },
+      { label: 'Supplier Short Name', key: 'vendor_short_name' }
+    ];
+    const filled = [];
+    const skipped = [];
+    for (const { label, key } of FIELDS) {
+      const value = data[key];
+      if (!value) { skipped.push(label + ' (no value)'); continue; }
+      if (fillOne(label, value)) filled.push(label);
+      else skipped.push(label + ' (not on this tab)');
+    }
+    if (filled.length === 0) {
+      showToast('VDF autofill: nothing matched on this tab.\\nMake sure you are on the Identifying Information or Address tab.', 'error');
+      return;
+    }
+    showToast('VDF autofill\\nFilled ' + filled.length + ': ' + filled.join(', ') + (skipped.length ? '\\nSkipped: ' + skipped.length : ''), 'success');
+  } catch(err) {
+    showToast('VDF autofill error: ' + (err && (err.message || err.toString())), 'error');
+    console.error('[VDF] error:', err);
+  }
+})();`;
+
+document.getElementById("bookmarkletLink").href = "javascript:" + encodeURIComponent(BOOKMARKLET_BODY);
+document.getElementById("bookmarkletLink").addEventListener("click", e => {
+  e.preventDefault();
+  alert("Drag this button up to your bookmarks bar — don't click it here.\n\nOnce it's saved as a bookmark, click that bookmark while you're on the PeopleSoft Identifying Information or Address tab.");
+});
+</script>
+</body>
+</html>
