@@ -671,43 +671,45 @@ const BOOKMARKLET_BODY = `(async function(){
       // trying tighter matches first and falling back to looser ones.
       function findAllMatching(target) {
         const t = norm(target);
+        const tStripped = stripSeps(target);
         const inputs = collectInputs(adoc);
         const inputSet = new Set(inputs);
-        const found = [];
+        const labels = Array.from(adoc.querySelectorAll('label[for]'));
+        const result = [];
         const seen = new Set();
-        function add(inp) { if (inp && !seen.has(inp)) { seen.add(inp); found.push(inp); } }
-        // Tier 1: exact match on a label[for] or on the accessible name.
-        for (const lbl of adoc.querySelectorAll('label[for]')) {
-          if (norm(lbl.textContent) === t) {
-            const inp = adoc.getElementById(lbl.htmlFor);
-            if (inp && inputSet.has(inp)) add(inp);
-          }
+        function add(inp) {
+          if (inp && inputSet.has(inp) && !seen.has(inp)) { seen.add(inp); result.push(inp); }
         }
+        // 1. label[for] text exact
+        for (const lbl of labels) {
+          if (norm(lbl.textContent) === t) add(adoc.getElementById(lbl.htmlFor));
+        }
+        if (result.length) return result;
+        // 2. label[for] text contains
+        for (const lbl of labels) {
+          if (norm(lbl.textContent).includes(t)) add(adoc.getElementById(lbl.htmlFor));
+        }
+        if (result.length) return result;
+        // 3. accessible name exact
         for (const inp of inputs) {
           const name = getAccName(inp, adoc);
           if (name && norm(name) === t) add(inp);
         }
-        if (found.length) return found;
-        // Tier 2: substring on label[for] or accessible name.
-        for (const lbl of adoc.querySelectorAll('label[for]')) {
-          if (norm(lbl.textContent).includes(t)) {
-            const inp = adoc.getElementById(lbl.htmlFor);
-            if (inp && inputSet.has(inp)) add(inp);
-          }
-        }
+        if (result.length) return result;
+        // 4. accessible name contains
         for (const inp of inputs) {
           const name = getAccName(inp, adoc);
           if (name && norm(name).includes(t)) add(inp);
         }
-        if (found.length) return found;
-        // Tier 3: id/name attribute substring (e.g. 'Address 1' -> 'ADDRESS1').
-        const tStripped = stripSeps(target);
+        if (result.length) return result;
+        // 5. id or name matches PeopleSoft field-id pattern: TARGET or TARGET$N
+        function psMatch(s) { return s === tStripped || s.startsWith(tStripped + '$'); }
         for (const inp of inputs) {
           const idS = stripSeps(inp.id);
           const nmS = stripSeps(inp.name);
-          if ((idS && idS.includes(tStripped)) || (nmS && nmS.includes(tStripped))) add(inp);
+          if ((idS && psMatch(idS)) || (nmS && psMatch(nmS))) add(inp);
         }
-        return found;
+        return result;
       }
       function highlight(inp) {
         const orig = inp.style.boxShadow;
