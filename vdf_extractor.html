@@ -336,6 +336,16 @@ async function extractVDF(arrayBuffer) {
     data[prefix + "_state"] = parts.state;
     data[prefix + "_zip"]   = parts.zip;
   }
+  // If remit or ordering addresses are blank, fall back to legal address.
+  // "Blank" = no street value on that address.
+  for (const prefix of ["remit", "ordering"]) {
+    if (!data[prefix + "_street"]) {
+      data[prefix + "_street"] = data.legal_street;
+      data[prefix + "_city"]   = data.legal_city;
+      data[prefix + "_state"]  = data.legal_state;
+      data[prefix + "_zip"]    = data.legal_zip;
+    }
+  }
   data.vendor_short_name = (data.vendor_legal_name || "").replace(/[^A-Za-z0-9]/g, "");
   return data;
 }
