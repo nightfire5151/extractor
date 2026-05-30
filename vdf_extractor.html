@@ -730,8 +730,20 @@ const BOOKMARKLET_BODY = `(async function(){
           if (name && norm(name).includes(t)) add(inp);
         }
         if (result.length) return result;
-        // 5. id or name matches PeopleSoft field-id pattern: TARGET or TARGET$N
-        function psMatch(s) { return s === tStripped || s.startsWith(tStripped + '$'); }
+        // 5. id or name matches PeopleSoft field-id pattern.
+        // Accept an exact stripped match, the FIELD$row form, or an optional
+        // record/scroll prefix in front of the field name (e.g. VNDRADDRADDRESS1$0).
+        // Guard: when looking for an address line, never match an EMAIL field.
+        function psMatch(s) {
+          if (!s) return false;
+          const base = s.indexOf('$') >= 0 ? s.slice(0, s.indexOf('$')) : s;
+          if (base === tStripped) return true;
+          if (base.endsWith(tStripped)) {
+            if (tStripped.indexOf('ADDRESS') === 0 && base.indexOf('EMAIL') >= 0) return false;
+            return true;
+          }
+          return false;
+        }
         for (const inp of inputs) {
           const idS = stripSeps(inp.id);
           const nmS = stripSeps(inp.name);
@@ -753,9 +765,12 @@ const BOOKMARKLET_BODY = `(async function(){
         { label: 'Email ID',    val: function(s){ return s.email ? data[s.email] : null; } }
       ];
       const doneByRecord = spans.map(function(){ return []; });
+      const debug = [];
       for (const fd of FIELD_DEFS) {
         const matches = findAllMatching(fd.label);
+        debug.push(fd.label + ': ' + matches.length + ' matched');
         for (const inp of matches) {
+          console.log('[VDF] field "' + fd.label + '" matched input', { id: inp.id, name: inp.name, ownerIndex: ownerIndex(inp) });
           const ri = ownerIndex(inp);
           if (ri < 0 || ri >= spans.length) continue;
           const idStr = (spans[ri].textContent || '').trim();
@@ -768,6 +783,7 @@ const BOOKMARKLET_BODY = `(async function(){
           doneByRecord[ri].push(fd.label);
         }
       }
+      console.log('[VDF] address-field match counts:', debug.join(' | '));
       const lines = [];
       for (let i = 0; i < spans.length; i++) {
         const idStr = (spans[i].textContent || '').trim();
